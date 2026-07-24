@@ -702,6 +702,9 @@ export class CharGrid {
             this.currentPanY = mouseY - worldY * this.currentZoom;
 
             this.clampPan();
+
+            this.render();
+            this.renderCellBorders();
         })
 
         const exitEvents = ['mouseout', 'mouseleave'];
@@ -744,14 +747,15 @@ export class CharGrid {
         (document.getElementById('zoom-slider') as HTMLInputElement).value = `${Math.ceil(this.currentZoom * 20) * 5}`;
         (document.getElementById('zoom-number') as HTMLInputElement).value = `${this.currentZoom * 100}`;
 
-        this.bCanvas.width = this.width * this.cellWidth * this.currentZoom;
-        this.bCanvas.height = this.height * this.cellHeight * this.currentZoom;
+        // this.bCanvas.width = this.width * this.cellWidth * this.currentZoom;
+        // this.bCanvas.height = this.height * this.cellHeight * this.currentZoom;
 
-        this.bCtx.setTransform(1, 0, 0, 1, 0, 0);
-        this.bCtx.scale(this.currentZoom, this.currentZoom);
+        // this.bCtx.setTransform(1, 0, 0, 1, 0, 0);
+        // this.bCtx.scale(this.currentZoom, this.currentZoom);
 
         if (!lazy) {
-            this.render(this.allCells);
+            this.clampPan();
+            this.render();
             this.renderCellBorders();
         }
     }
@@ -1069,9 +1073,7 @@ export class CharGrid {
 
         const x = (worldX * this.currentZoom) + this.currentPanX;
         const y = (worldY * this.currentZoom) + this.currentPanY;
-
-        // 'two-tone' | 'yellow' | 'magenta' | 'cyan' | 'black' | 'yellow' | 'grey'
-        // 'none' | 'crosshair' | 'dot' | 'ring'
+        
         const style = settings.secondaryCursorColour;
         const radius = (this.toolManager.currentBrushSize * this.cellWidth * 0.5 * this.currentZoom) || 8;
         switch (settings.secondaryCursorType) {
