@@ -184,10 +184,22 @@ export class ToolManager {
     // If you pass in a null, it will clear the style
     setCurrentCellStyling(styledCell: Partial<Cell>) {
         if (styledCell.style) {
-            if (styledCell.style?.fgColor) this.currentStyle.fgColor = styledCell.style?.fgColor?.hexString ?? null;
-            if (styledCell.style?.bgColor) this.currentStyle.bgColor = styledCell.style?.bgColor?.hexString ?? null;
+            if (styledCell.style?.fgColor) {
+                this.currentStyle.fgColor = styledCell.style?.fgColor?.hexString ?? null;
+                this.paletteContainerEl.querySelectorAll('.selected.foreground').forEach((el) => { el.classList.remove('selected','foreground'); });
+                this.paletteContainerEl.querySelectorAll(`[data-colour="${styledCell.style?.fgColor?.hexString ?? 'NULL' }"]`).forEach((el) => { el.classList.add('selected', 'foreground'); });
+            }
+            if (styledCell.style?.bgColor) {
+                this.currentStyle.bgColor = styledCell.style?.bgColor?.hexString ?? null;
+                this.paletteContainerEl.querySelectorAll('.selected.background').forEach((el) => { el.classList.remove('selected','background'); });
+                this.paletteContainerEl.querySelectorAll(`[data-colour="${styledCell.style?.bgColor?.hexString ?? 'NULL' }"]`).forEach((el) => { el.classList.add('selected', 'background'); });
+            }
         }
-        if (styledCell.hasChar) this.currentStyle.char = styledCell.char;
+        if (styledCell.hasChar) {
+            this.currentStyle.char = styledCell.char;
+            this.charsetContainerEl.querySelectorAll('.selected').forEach((el) => { el.classList.remove('selected') });
+            this.charsetContainerEl.querySelectorAll(`[data-char="${this.currentStyle.char.trim() ?? 'NULL' }"]`).forEach((el) => { el.classList.add('selected'); });
+        }
 
         document.documentElement.style.setProperty('--current-fg', `${this.resolveFgColor(styledCell)}`);
         document.documentElement.style.setProperty('--current-bg', `${this.resolveBgColor(styledCell)}`);
@@ -307,6 +319,7 @@ export class ToolManager {
 
         const adaptivePre = document.createElement('pre');
         adaptivePre.className = 'grid-item adaptive selected';
+        adaptivePre.dataset.char = 'NULL';
         adaptivePre.innerText = '•';
         adaptivePre.title ='(unset)';
         adaptivePre.addEventListener('click', (ev: PointerEvent) => {
@@ -375,6 +388,7 @@ export class ToolManager {
             if (this.savedPalettes[paletteSelect.value]) {
                 this.populateColourSwatches(this.paletteContainerEl, this.savedPalettes[paletteSelect.value]);
                 this.currentPalette = this.savedPalettes[paletteSelect.value];
+                this.refreshFn();
             }
         });
 
@@ -388,51 +402,55 @@ export class ToolManager {
 
         const handleSelection = (target: HTMLElement, colour: string | null, type: 'foreground' | 'background') => {
             container.querySelectorAll('.selected.'+type).forEach((el) => { el.classList.remove('selected'); el.classList.remove(type) });
-            target.classList.add('selected');
-            target.classList.add(type);
+            target.classList.add('selected', type);
             if (this.toolType === 'selection') this.modifyCellFn( { style: { [type === 'foreground' ? 'fgColor' : 'bgColor']: new Color(colour) } } );
         };
+
+        const existingColours = [];
 
         // To extend for background colour, add a second handleSelection & split this into handleFgSelection and handleBgSelection 
         // (with different styling on the CSS)
 
         const adaptivePre = document.createElement('pre');
-        adaptivePre.className = 'grid-item adaptive selected';
+        adaptivePre.className = 'grid-item adaptive selected foreground background';
         adaptivePre.innerText = '•';
         adaptivePre.title ='(unset)';
+        adaptivePre.dataset.colour = 'NULL';
         adaptivePre.addEventListener('click', (ev: PointerEvent) => {
             ev.preventDefault();
             if (ev.button === 0) handleSelection(adaptivePre, null, ev.altKey ? 'background' : 'foreground');
         });
         container.appendChild(adaptivePre);
-
         for (const [name, col] of Object.entries(palette)) {
-            const pre = document.createElement('pre');
-            pre.classList = 'grid-item swatch-item';
-            pre.dataset.colour = col;
-            pre.style.backgroundColor = col;
-            pre.title = `${name}: ${col}`;
-            pre.addEventListener('click', (ev: PointerEvent) => {
-                ev.preventDefault();
-                if (ev.button === 2) {
-                    if (!lockButton.checked) {
-                        Notifier.colorPicker({
-                            initialColor: pre.dataset.colour,
-                            theme: 'dark',
-                            showPalette: false
-                        }).then((colorResult) => {
-                            if (colorResult) {
-                                pre.dataset.colour = colorResult;
-                                pre.style.backgroundColor = colorResult;
-                                pre.title = colorResult;
-                            }
-                        })
-                    }
-                } else if (ev.button === 0) handleSelection(pre, col, ev.altKey ? 'background' : 'foreground');
-            });
-
-            container.appendChild(pre);
-            swatches.push(pre);
+            if (!existingColours.includes(col)) {
+                const pre = document.createElement('pre');
+                pre.classList = 'grid-item swatch-item';
+                pre.dataset.colour = col;
+                pre.style.backgroundColor = col;
+                pre.title = `${name}: ${col}`;
+                pre.addEventListener('click', (ev: PointerEvent) => {
+                    ev.preventDefault();
+                    if (ev.button === 2) {
+                        if (!lockButton.checked) {
+                            Notifier.colorPicker({
+                                initialColor: pre.dataset.colour,
+                                theme: 'dark',
+                                showPalette: false
+                            }).then((colorResult) => {
+                                if (colorResult) {
+                                    pre.dataset.colour = colorResult;
+                                    pre.style.backgroundColor = colorResult;
+                                    pre.title = colorResult;
+                                }
+                            })
+                        }
+                    } else if (ev.button === 0) handleSelection(pre, col, ev.altKey ? 'background' : 'foreground');
+                });
+    
+                container.appendChild(pre);
+                swatches.push(pre);
+                existingColours.push(col);
+            }
         }
 
         lockButton.addEventListener('input', () => {

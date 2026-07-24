@@ -33,7 +33,7 @@ export class Color {
     }
 
     public static add(a: RGB, b: RGB): Color {
-        return new Color({ r: a.r + b.r, g: a.g + b.g, b: a.b + b.b });
+        return new Color({ r: clampf(a.r + b.r,0,255), g: clampf(a.g + b.g,0,255), b: clampf(a.b + b.b,0,255) });
     }
 
     public static hexToRgb(hex: string): { r: number, g: number, b: number } | null {
@@ -201,4 +201,27 @@ export function getDirectionToOrigin(cursor: Position, origin: Position): Direct
   const horizontal = origin.c < cursor.c ? "w" : "e";
 
   return `${vertical}${horizontal}` as Direction;
+}
+
+export function debounce<T extends (...args: any[]) => void>(func: T, delay: number): { (...args: Parameters<T>): void; cancel: () => void } {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  const debounced = (...args: Parameters<T>) => {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = setTimeout(() => {
+      func(...args);
+      timeoutId = null;
+    }, delay);
+  };
+
+  debounced.cancel = () => {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+  };
+
+  return debounced;
 }

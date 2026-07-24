@@ -401,9 +401,29 @@ select {
   border: 1px solid #222;
 }
 
-.grid-item.selected {
+.grid-item.selected:not(.foreground):not(.background) {
   border: 2px solid white;
   color: white;
+}
+
+.grid-item.selected.background {
+  border: 3px solid black;
+  outline: 1px solid white;
+  outline-offset: -1px;
+  position: relative;
+}
+
+.grid-item.selected.foreground::after {
+  content: '🟊';
+  position: absolute;
+  color: white;
+  mix-blend-mode: difference;
+  font-size: 12pt;
+  line-height: 1.0;
+}
+
+.grid-item.selected.adaptive.foreground::after {
+  transform: rotate(45deg);
 }
 
 .hidden-char-input {

@@ -2,7 +2,7 @@ import Notifier from "ui-cues-ts";
 import { showText } from "./main";
 import { settings } from "./settings";
 import { ToolManager } from "./tool_manager";
-import { Cell, clampf, clampi, Color, copyToClipboard, getClipboardText, getFontAspectRatio, type CellStyle } from "./utils";
+import { Cell, clampf, clampi, Color, copyToClipboard, debounce, getClipboardText, getFontAspectRatio, type CellStyle } from "./utils";
 type SelectionOperation = "replace" | "add" | "intersect" | "subtract";
 
 const SelectAdd = (_target): boolean => { return true };
@@ -477,6 +477,7 @@ export class CharGrid {
             this.debugMode = debugModeBtn.checked;
             this.renderCellBorders();
         });
+        this.debugMode = debugModeBtn.checked;
     }
 
     setupEvents() {
@@ -544,7 +545,7 @@ export class CharGrid {
             if (!this.awaitingMouseUp) return;
 
             ev.preventDefault();
-            if (ev.button === 2) {
+            if (ev.button === 2 && this.isPanning) {
                 this.isPanning = false;
                 this.render(this.allCells);
             } else {
@@ -554,7 +555,7 @@ export class CharGrid {
                 this.renderCellBorders();
                 this.renderMouseoverDebug(ev);
 
-                if (this.toolManager.currentTool === 'eyedropper') this.pickCellStyle(ev);
+                if (this.hoveredCell) this.resolveClick(this.hoveredCell);
             }
         });
         
@@ -684,6 +685,21 @@ export class CharGrid {
             this.redoBtn.addEventListener('click', () => { this.redo() });
         });
 
+        function debounceWheel() {
+            let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+            return (event: WheelEvent) => {
+                if (timeoutId) clearTimeout(timeoutId);
+
+                timeoutId = setTimeout(() => {
+                    return true;
+                    timeoutId = null;
+                }, 150);
+            };
+        }
+
+        let debouncedWheelEnd = () => {};
+
         this.canvasContainer.addEventListener('wheel', (ev: WheelEvent) => {
             ev.preventDefault();
             
@@ -696,7 +712,10 @@ export class CharGrid {
 
             const zoomSensitivity = 0.002;
 
-            this.zoomByStep(ev.deltaY * -zoomSensitivity);
+            this.zoomByStep(ev.deltaY * -zoomSensitivity, true);
+
+            debouncedWheelEnd = debounce(() => { this.zoomByStep(0, false) }, 150);
+            debouncedWheelEnd();
 
             this.currentPanX = mouseX - worldX * this.currentZoom;
             this.currentPanY = mouseY - worldY * this.currentZoom;
@@ -741,21 +760,25 @@ export class CharGrid {
         window.addEventListener('resize', () => { this.setCanvasSize(); this.render(this.allCells); this.renderCellBorders(); })
     }
 
+    resolveClick(cell: Cell) {
+        if (this.toolManager.currentTool === 'eyedropper') this.pickCellStyle(cell);
+    }
+
     zoomByStep(step: number, lazy: boolean = false): void {
         this.currentZoom = clampf(this.currentZoom + step, 0.05, 5);
 
         (document.getElementById('zoom-slider') as HTMLInputElement).value = `${Math.ceil(this.currentZoom * 20) * 5}`;
         (document.getElementById('zoom-number') as HTMLInputElement).value = `${this.currentZoom * 100}`;
 
-        // this.bCanvas.width = this.width * this.cellWidth * this.currentZoom;
-        // this.bCanvas.height = this.height * this.cellHeight * this.currentZoom;
-
-        // this.bCtx.setTransform(1, 0, 0, 1, 0, 0);
-        // this.bCtx.scale(this.currentZoom, this.currentZoom);
-
         if (!lazy) {
+            this.bCanvas.width = this.width * this.cellWidth * this.currentZoom;
+            this.bCanvas.height = this.height * this.cellHeight * this.currentZoom;
+
+            this.bCtx.setTransform(1, 0, 0, 1, 0, 0);
+            this.bCtx.scale(this.currentZoom, this.currentZoom);
+            
             this.clampPan();
-            this.render();
+            this.render(this.allCells);
             this.renderCellBorders();
         }
     }
@@ -1191,11 +1214,11 @@ export class CharGrid {
 
         cellSelectCharLabel.textContent = "(" + (this.activeCell.hasChar ? this.activeCell.char : 'no char') + ") ";
 
-        if (fgColor) cellSelectFgLabel.innerHTML = `(<pre title=${fgColor.toString()} style=color:${fgColor.toString()}>${fgColor.hexString}}</pre>) foreground colour`;
+        if (fgColor) cellSelectFgLabel.innerHTML = `(<pre title=${fgColor.toString()} style="color:${fgColor.toString()}">${fgColor.hexString}}</pre>) foreground colour`;
         else cellSelectFgLabel.style.display = 'none';
         
         
-        if (bgColor) cellSelectBgLabel.innerHTML = `(<pre title=${bgColor.toString()} style=background-color:${bgColor.toString()}>${bgColor.hexString}}</pre>) background colour`;
+        if (bgColor) cellSelectBgLabel.innerHTML = `(<pre title=${bgColor.toString()} style="background-color:${bgColor.toString()}">${bgColor.hexString}}</pre>) background colour`;
         else cellSelectBgLabel.style.display = 'none';
         
         document.getElementById(cellSelectFgLabel.htmlFor).style.display = cellSelectFgLabel.style.display;
@@ -1204,7 +1227,7 @@ export class CharGrid {
         dialog.showModal();
     }
 
-    openStylePickerSel() {
+    async openStylePickerSel(): Promise<Partial<Cell>> {
         if (!this.activeCell && !this.hoveredCell) return; // TODO: write function for mousetargetcell automatically
 
         const targetCell = this.activeCell ?? this.hoveredCell;
@@ -1214,33 +1237,44 @@ export class CharGrid {
         const cellSelectBgLabel = document.getElementById('cell-select-bg-label') as HTMLLabelElement;
 
         const dialog = document.getElementById('cell-select-form') as HTMLDialogElement;
-        dialog.querySelectorAll('[name="contiguous"]').forEach((el: HTMLElement) => {
+        dialog.querySelectorAll('label.contiguous-line').forEach((el: HTMLElement) => {
             el.style.display = 'none'; // hide contiguous radio btns
         });
 
         cellSelectFgLabel.style.display = '';
         cellSelectBgLabel.style.display = '';
+        document.getElementById('cell-select-fg').style.display = '';
+        document.getElementById('cell-select-bg').style.display = '';
 
         const fgColorStr = this.toolManager.resolveFgColor(targetCell);
         const bgColorStr = this.toolManager.resolveBgColor(targetCell);
 
         cellSelectCharLabel.textContent = "(" + (this.activeCell.hasChar ? this.activeCell.char : 'no char') + ") ";
 
-        cellSelectFgLabel.innerHTML = `(<pre title=${fgColorStr} style=color:${fgColorStr}>${fgColorStr}}</pre>) foreground colour`;
-        cellSelectBgLabel.innerHTML = `(<pre title=${bgColorStr} style=background-color:${bgColorStr}>${bgColorStr}}</pre>) background colour`;
+        cellSelectFgLabel.innerHTML = `(<span title="${fgColorStr}" style="color:${fgColorStr}">${fgColorStr}</span>) foreground colour`;
+        cellSelectBgLabel.innerHTML = `(<span title="${bgColorStr}" style="background-color:${bgColorStr}">${bgColorStr}</span>) background colour`;
         
-        document.getElementById(cellSelectFgLabel.htmlFor).style.display = cellSelectFgLabel.style.display;
-        document.getElementById(cellSelectBgLabel.htmlFor).style.display = cellSelectBgLabel.style.display;
+        dialog.addEventListener('submit', (ev) => {
+            const getChar = (document.getElementById('cell-select-char') as HTMLInputElement).checked;
+            const getFg = (document.getElementById('cell-select-fg') as HTMLInputElement).checked;
+            const getBg = (document.getElementById('cell-select-bg') as HTMLInputElement).checked;
+
+            this.toolManager.setCurrentCellStyling({
+                ...(getChar ? { char: targetCell.char} : {}),
+                style: {
+                    ...(getFg && targetCell.style.fgColor ? { fgColor: targetCell.style.fgColor } : {}),
+                    ...(getBg && targetCell.style.bgColor ? { bgColor: targetCell.style.bgColor } : {}),
+                }
+            });
+        });
 
         dialog.showModal();
     }
 
-    pickCellStyle(ev: MouseEvent) {
-        if (!ev.ctrlKey) {
+    pickCellStyle(cell: Cell) {
+        // TODO: skip if ctrl key held down
 
-        } else {
-
-        }
+        this.openStylePickerSel();
     }
 
     startSelection(ev: MouseEvent) {
