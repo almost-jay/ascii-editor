@@ -2,7 +2,7 @@ import Notifier from "ui-cues-ts";
 import { showText } from "./main";
 import { settings } from "./settings";
 import { ToolManager } from "./tool_manager";
-import { Cell, clampf, clampi, Color, copyToClipboard, debounce, getClipboardText, getFontAspectRatio, type CellStyle } from "./utils";
+import { Cell, clampf, clampi, Color, copyToClipboard, debounce, getClipboardText, getFontAspectRatio, type CellStyle, type Position } from "./utils";
 type SelectionOperation = "replace" | "add" | "intersect" | "subtract";
 
 const SelectAdd = (_target): boolean => { return true };
@@ -110,7 +110,7 @@ export class CharGrid {
 
         this.undoBtn = document.getElementById('undo-btn') as HTMLButtonElement;
         this.redoBtn = document.getElementById('redo-btn') as HTMLButtonElement;
-        this.toolManager = new ToolManager((s: Partial<Cell>) => this.imposeCellStyle(s), () => {
+        this.toolManager = new ToolManager((sty: Partial<Cell>) => this.imposeCellStyle(sty, this.hasActiveSelection ? this.selectedCells : [this.activeCell]), () => {
             this.setCanvasSize();
             this.render(this.allCells);
             this.renderCellBorders();
@@ -491,16 +491,29 @@ export class CharGrid {
                 this.renderMouseoverDebug(ev);
                 return;
             } else {
-                if (!this.isPanning && this.toolManager.currentTool === 'select' && this.selectionStartCell) {
-                    const { x, y } = this.getMousePos(ev);
-
-                    const col = Math.floor(x / this.cellWidth);
-                    const row = Math.floor(y / this.cellHeight);
-
-                    if (this.checkPosInBounds(col, row)) {
-                        this.toolManager.updateArrowCursor({ r: row, c: col }, this.selectionStartCell.pos);
+                if (!this.isPanning) {
+                    if (this.toolManager.currentTool === 'select' && this.selectionStartCell) {
+                        const { x, y } = this.getMousePos(ev);
+    
+                        const col = Math.floor(x / this.cellWidth);
+                        const row = Math.floor(y / this.cellHeight);
+    
+                        if (this.checkPosInBounds(col, row)) {
+                            this.toolManager.updateArrowCursor({ r: row, c: col }, this.selectionStartCell.pos);
+                        }
+                    } else if (this.toolManager.currentTool === 'paint' && this.awaitingMouseUp) {
+                        const { x, y } = this.getMousePos(ev);
+    
+                        const col = Math.floor(x / this.cellWidth);
+                        const row = Math.floor(y / this.cellHeight);
+    
+                        if (this.checkPosInBounds(col, row)) {
+                            this.imposeCellStyle(this.toolManager.currentStyledCell, [this.grid[row][col]]);
+                            this.renderCellBorders();
+                        }
                     }
                 }
+                    
             }
 
             ev.preventDefault();
@@ -543,6 +556,7 @@ export class CharGrid {
         
         document.addEventListener('mouseup', (ev: MouseEvent) => {
             if (!this.awaitingMouseUp) return;
+            this.awaitingMouseUp = false;
 
             ev.preventDefault();
             if (ev.button === 2 && this.isPanning) {
@@ -762,6 +776,10 @@ export class CharGrid {
 
     resolveClick(cell: Cell) {
         if (this.toolManager.currentTool === 'eyedropper') this.pickCellStyle(cell);
+        if (this.toolManager.currentTool === 'paint') {
+            this.imposeCellStyle(this.toolManager.currentStyledCell, [cell]);
+            this.renderCellBorders();               
+        }
     }
 
     zoomByStep(step: number, lazy: boolean = false): void {
@@ -896,7 +914,7 @@ export class CharGrid {
         this.currentPanY = clampf(this.currentPanY, minY, maxY);
     }
 
-    private drawCell(ctx: CanvasRenderingContext2D, cell: Cell) {
+    private stampCell(ctx: CanvasRenderingContext2D, cell: Cell) {
         const x = cell.pos.c * this.cellWidth;
         const y = cell.pos.r * this.cellHeight;
 
@@ -926,7 +944,7 @@ export class CharGrid {
             
             for (const cell of dirtyCells) {
                 this.bCtx.clearRect(cell.pos.c * this.cellWidth, cell.pos.r * this.cellHeight, this.cellWidth, this.cellHeight);
-                this.drawCell(this.bCtx, cell);
+                this.stampCell(this.bCtx, cell);
             }
             this.bCtx.restore();
         }
@@ -1412,8 +1430,7 @@ export class CharGrid {
         this.selectedCellBuffer.clear();
     }
     
-    imposeCellStyle(styledCell: Partial<Cell>) {
-        showText(`Imposing cell: ${JSON.stringify(styledCell)}`);
+    imposeCellStyle(styledCell: Partial<Cell>, cells: Iterable<Cell>) {
         if (this.hasActiveSelection || this.activeCell) {
             this.modifyCells((c: Cell) => {
                 if (styledCell.char) c.char = styledCell.char;
@@ -1421,7 +1438,7 @@ export class CharGrid {
                     if (styledCell.style.fgColor) c.style.fgColor = styledCell.style.fgColor;
                     if (styledCell.style.bgColor) c.style.bgColor = styledCell.style.bgColor;
                 }
-            }, this.hasActiveSelection ? this.selectedCells : [this.activeCell]);
+            }, cells);
         }
         this.toolManager.setCurrentCellStyling(styledCell);
     }
@@ -1432,6 +1449,15 @@ export class CharGrid {
         
         action(this.activeCell);
         this.render([this.activeCell]);
+    }
+    
+    modifyCellAt(action: (c: Cell) => any, pos: Position) {
+        const target = this.grid[pos.r][pos.c];
+        if (!target) return;
+        this.commit();
+        
+        action(target);
+        this.render([target]);
     }
 
     modifyCells(action: (c: Cell) => any, mask: Iterable<Cell>) {

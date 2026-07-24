@@ -127,12 +127,12 @@ export class ToolManager {
 
     // returns a hex string which is the colour which should be DISPLAYED for the foreground
     resolveFgColor(cell: Partial<Cell>): string {
-        return cell.style.fgColor?.toString() ?? this.fgDefault;
+        return cell.style?.fgColor?.toString() ?? this.fgDefault;
     }
     
     // returns a hex string which is the colour which should be DISPLAYED for the background
     resolveBgColor(cell: Partial<Cell>): string {
-        return cell.style.bgColor?.toString() ?? this.bgDefault;
+        return cell.style?.bgColor?.toString() ?? this.bgDefault;
     }
 
     public get toolType(): ToolCategory {
