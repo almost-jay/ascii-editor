@@ -1,0 +1,49 @@
+Input	Action
+Arrow keys	Move selected cell one step
+Ctrl+Arrow	Jump in that direction, skipping blank cells (stop at first non-blank after a run of blanks, or edge of content — same idea as word-jump in text editors)
+Alt+Arrow (Up/Down)	Move current row up/down, swapping with neighbor
+Alt+Arrow (Left/Right)	Move current column left/right, swapping with neighbor
+Shift+Arrow	Extend selection by one cell in that direction
+Shift+Click	Extend selection to clicked cell (rectangular)
+Delete/Backspace	Clear character (and optionally colors) in selected cell(s)
+Typing a character	Write char at cursor, advance cursor (respect typing direction setting)
+Ctrl+C / Ctrl+V	Copy/paste selection as a mini-buffer (cells, not just plain text)
+Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z)	Undo/redo
+Ctrl+A	Select all
+Escape	Clear selection / cancel current tool drag
+Tab / Shift+Tab (optional)	Jump to next/previous "block" of content, like word-jump
+
+
+- rectangular selection via shift arrow or shift click
+- copy/cut/paste incl. per-cell formatting (and "paste special" with ctrl+shift+V or ctrl+alt+V)
+- spreadsheet style
+
+Mouseover: White border with -1px outline offset
+Active cell: Blue with 0px outline offset
+Active cell + mouseover: White border with 0px outline offset
+Selected cells: White dashed border
+
+<select> selects single item, clearing the previous selection
+Shift+<select> adds to the existing selection
+Ctrl+<select> intersects, meaning it toggles the existing selection
+Alt+<select> subtracts from the existing selection
+
+Evaluate on initial mousedown
+
+BREEZE colours in settings
+
+Font settings. When a font is selected, run a precompile, use a loading bar.
+
+Cursor for panning etc... use grabbing hand
+
+In drawing mode, the "Auto" will erase characters
+
+
+- If tool category is selection: The selected cells and the toolbar styling are always kept in sync (changing one changes the other)
+
+- If tool category is paint-style: The active cell and the toolbar styling may not be the same, and clicking will cause the style to be imposed over the cell
+
+
+
+
+

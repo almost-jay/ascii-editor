@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="src/style.css" />
+    <title>ascii_editor</title>
+  </head>
+  <body>
+      <div class="side-panel left open" id="left-panel">
+        <button type="button" class="toggle-btn" id="panelToggle" aria-label="Toggle Panel" onclick="this.parentElement.classList.toggle('open')"></button>
+
+        <div class="char-swatch-container">
+          <div class="control-row">
+            <input type="checkbox" id="charset-lock" class="icon-btn lock-btn" checked="true" data-icon="lock" title="Toggle editing of character set" />
+            <select id="charset-select" class="palette-select">
+              <option>ASCII Set 1</option>
+              <option>ASCII Set 2</option>
+            </select>
+            <input type="button" class="icon-btn add-btn" data-icon="add" />
+          </div>
+          <div id="charset-grid" class="grid-frame">
+            <pre class="grid-item">@</pre>
+            <pre class="grid-item">#</pre>
+            <pre class="grid-item">$</pre>
+            <pre class="grid-item">%</pre>
+            <pre class="grid-item">&</pre>
+            <pre class="grid-item">*</pre>
+          </div>
+        </div>
+
+        <div class="col-swatch-container">
+          <div class="control-row">
+            <input type="checkbox" class="icon-btn lock-btn" checked="true" data-icon="lock" title="Toggle editing of colour palette" id="palette-lock" />
+            <select id="palette-select" class="palette-select">
+              <option>Palette 1</option>
+              <option>Palette 2</option>
+            </select>
+            <input type="button" class="icon-btn add-btn" data-icon="add" />
+            <input type="button" class="icon-btn" data-icon="card-add" title="Import new palette from text" />
+          </div>
+          <div id="palette-grid" class="grid-frame">
+            <pre class="grid-item swatch-item"></pre>
+            <pre class="grid-item swatch-item"></pre>
+            <pre class="grid-item swatch-item"></pre>
+            <pre class="grid-item swatch-item"></pre>
+            <pre class="grid-item swatch-item"></pre>
+            <pre class="grid-item swatch-item"></pre>
+          </div>
+        </div>
+        <div class="snippets-container">
+          <div id="snippets-grid" class="grid-frame">
+              <pre class="grid-item snippet"></pre>
+              <pre class="grid-item snippet"></pre>
+              <pre class="grid-item snippet"></pre>
+              <pre class="grid-item snippet"></pre>
+            </div>
+        </div>
+      </div>
+      <div id="main-panel">
+        <div id="header">
+          <div class="button-row-group">
+            <input type="button" class="icon-btn" id="undo-btn" data-icon="undo" title="Undo" disabled />
+            <input type="button" class="icon-btn" id="redo-btn" data-icon="redo" title="Redo" disabled />
+          </div>  
+          <div class="button-row-group">
+            <input type="checkbox" class="icon-btn" id="selection-as-mask" data-icon="checkbox" title="Only allow drawing within the active selection area" />
+            <label class="header-label" for="selection-as-mask">Selection as mask</label>
+          </div>
+          <div class="button-row-group">
+            <input type="button" class="icon-btn import-btn" data-icon="import" title="Import text from file" />
+            <input type="button" class="icon-btn import-paste-btn" data-icon="paste" title="Import text from clipboard" />
+            <input type="button" id="download-btn" class="icon-btn" data-icon="download" title="Download current canvas as plain text file" />
+          </div>  
+          </div>
+
+        <div id="canvas-middle">
+          <div id="toolbar">
+          <div class="toolbar-group">
+            <input type="radio" class="icon-btn tool" name="toolbar" value="cursor" data-icon="cursor-btn" title="Select and edit a single cell" checked />
+            <input type="radio" class="icon-btn tool" name="toolbar" value="transform" data-icon="transform" />
+            <input type="radio" class="icon-btn tool" name="toolbar" value="eyedropper" data-icon="eyedropper" title="Click on a cell to pick its attributes" />
+          </div>
+          <div class="toolbar-group">
+            <input type="radio" class="icon-btn tool" name="toolbar" value="select" data-icon="select" title="Change the current selection by drawing a rectangle" />
+            <input type="radio" class="icon-btn tool" name="toolbar" value="wand" data-icon="wand" title="Click on a cell to select similar cells" />
+          </div>
+          
+          <div class="toolbar-group">
+            <input type="radio" class="icon-btn tool" name="toolbar" value="paint" data-icon="paint" title="Freehand paint cells with the selected styling" />
+            <input type="radio" class="icon-btn tool" name="toolbar" value="line" data-icon="line-btn" title="Draw straight lines. Hold Shift to snap to 90 degree angles" />
+            <input type="radio" class="icon-btn tool" name="toolbar" value="fill" data-icon="fill" title="Fill contiguous areas of fg/bg colour" />
+          </div>
+          <div class="toolbar-group" style="height: auto; flex: 0.75;"></div>
+          <div class="toolbar-group">
+            <input type="button" id="setup-btn" class="icon-btn" data-icon="setup" title="Drawing setup & properties" />
+            <input type="button" id="find-btn" class="icon-btn find-btn" data-icon="find" title="Find and replace cells" />
+            <input type="button" id="export-btn" class="icon-btn" data-icon="export" title="Export current selection as plain text" />
+            <input type="button" id="options-btn" class="icon-btn" data-icon="options" title="Change user preferences" />
+          </div>
+        </div>
+          <div id="canvas-container"></div>
+        </div>
+        <div id="status-bar">
+          <pre id="style-preview">A</pre>
+          <span id="current-insert-mode">INSERT</span>
+          <span>
+            <input type="button" id="zoom-out-btn" class="icon-btn" data-icon="zoom-out" />
+            <input type="range" id="zoom-slider" value="100" min="5" max="500" step="5" class="zoom-slider" />
+            <input type="button" id="zoom-in-btn" class="icon-btn" data-icon="zoom-in" />
+            <input type="number" id="zoom-number" value="100" min="5" max="500" />
+          </span>
+        </div>
+      </div>
+      
+      <div class="side-panel right open" id="right-panel">
+        <button type="button" class="toggle-btn" id="panelToggle" aria-label="Toggle Panel" onclick="this.parentElement.classList.toggle('open')"></button>
+        <div id="console"></div>
+        <div class="button-row-group">
+          <input type="checkbox" id="debug-mode-btn" class="icon-btn" data-icon="debug-mode" title="Toggle debug mode" />
+          <input type="button" id="clear-storage" class="icon-btn" data-icon="delete" title="Clear localstorage" />
+        </div>
+        <pre id="preview"></pre>
+      </div>
+
+      <dialog id="cell-select-form" class="blocking">
+        <form method="dialog">
+          <input type="button" class="icon-btn close-btn" onclick="this.parentElement.parentElement.close()" data-icon="close2"></button>
+          <input type="checkbox" class="icon-btn" data-icon="checkbox" id="cell-select-char" /><label id="cell-select-char-label" for="cell-select-char"></label><br>
+          <input type="checkbox" class="icon-btn" data-icon="checkbox" id="cell-select-fg" /><label id="cell-select-fg-label" for="cell-select-fg"></label><br>
+          <input type="checkbox" class="icon-btn" data-icon="checkbox" id="cell-select-bg" /><label id="cell-select-bg-label" for="cell-select-bg"></label><br>
+          <br>
+          <input type="radio" name="contiguous" value="anywhere" checked /> Anywhere<br>
+          <input type="radio" name="contiguous" value="contiguous-active" /> Contiguous to active cell<br>
+          <input type="radio" name="contiguous" value="contiguous-selection" /> Contiguous to active cell and current selection<br>
+        
+          <div class="dialog-actions">
+            <button type="button" onclick="this.parentElement.parentElement.parentElement.close()">Cancel</button>
+            <button type="submit" id="cell-select-submit">Go</button>
+          </div>
+        </form>
+      </dialog>
+      
+      <dialog id="page-setup" class="blocking">
+        <form method="dialog">
+          <input type="button" class="icon-btn close-btn" onclick="this.parentElement.parentElement.close()" data-icon="close2"></button>
+          
+          <input type="number" id="canvas-width" /><label class="sublabel" for="canvas-width">Width (number of columns)</label><br>
+          <input type="number" id="canvas-height" /><label class="sublabel" for="canvas-height">Height (number of rows)</label><br>
+          <div class="dialog-actions">
+            <button type="button" onclick="this.parentElement.parentElement.parentElement.close()">Cancel</button>
+            <button type="submit" id="cell-select-submit">Go</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="clear-storage-selection" class="blocking">
+        <form method="dialog" id="clear-storage-form" name="clear-storage">
+          <input type="button" class="icon-btn close-btn" onclick="this.parentElement.parentElement.close()" data-icon="close2"></button>
+          <div id="clear-form-contents"></div>
+          <div class="dialog-actions">
+            <button type="button" onclick="this.parentElement.parentElement.parentElement.close()" name="clear-storage">Cancel</button>
+            <button type="submit" id="cell-select-submit" style="color: darkred" name="clear-storage">Delete</button>
+          </div>
+        </form>
+      </dialog>
+    <script type="module" src="/src/main.ts"></script>
+    <script>
+    document.addEventListener('click', (e) => {
+      const openTrigger = e.target.closest('[data-opens]');
+      if (openTrigger) {
+        const dialogId = openTrigger.dataset.openDialog;
+        document.getElementById(dialogId)?.showModal();
+        return;
+      }
+
+      const closeTrigger = e.target.closest('[data-closes]');
+      if (closeTrigger) {
+        closeTrigger.closest('dialog')?.close();
+      }
+    });
+
+    document.addEventListener('submit', (e) => {
+      const form = e.target;
+      const action = form.dataset.submits;
+      if (!action || !dialogHandlers[action]) return;
+
+      const formData = Object.fromEntries(new FormData(form));
+      
+      // some bullshit idfk
+    });
+
+    document.querySelectorAll('.close-btn').forEach((inp) => {
+      inp.style.backgroundImage = `url('/${inp.dataset.icon}-checked.png')`;
+      inp.onchange = () => inp.style.backgroundImage = `url('/${inp.dataset.icon}-${inp.checked ? 'checked' : 'unchecked'}.png')`
+    });
+
+    document.querySelectorAll('input[type="checkbox"].icon-btn').forEach((inp) => {
+      inp.style.backgroundImage = `url('/${inp.dataset.icon}-${inp.checked ? 'checked' : 'unchecked'}.png')`;
+      inp.onchange = () => inp.style.backgroundImage = `url('/${inp.dataset.icon}-${inp.checked ? 'checked' : 'unchecked'}.png')`
+    });
+
+    document.querySelectorAll('input[type="button"].icon-btn, input[type="radio"].icon-btn').forEach((inp) => {
+      inp.style.backgroundImage = `url('/${inp.dataset.icon}.png')`;
+    });
+
+    document.querySelectorAll('.toggle-btn').forEach((btn) => {
+      let pressTimer;
+      btn.addEventListener('pointerdown', (ev) => {
+        if (!btn.parentElement.classList.contains('open')) return; // don't allow resizing if drawer is closed
+
+        pressTimer = setTimeout(() => {
+          ev.target.setPointerCapture(ev.pointerId);
+          document.body.style.cursor = 'col-resize';
+
+          const startX = ev.clientX;
+          const startWidth = btn.parentElement.offsetWidth;
+
+          const onPointerMove = (pmev) => { // pmev stands for pointer move event :)
+            const currentWidth = startWidth + (pmev.clientX - startX);
+            if (btn.parentElement.classList.contains('left')) document.documentElement.style.setProperty('--drawer-left-width', `${currentWidth}px`);
+            if (btn.parentElement.classList.contains('right')) document.documentElement.style.setProperty('--drawer-right-width', `${currentWidth}px`);
+          };
+          
+          const onPointerUp = (puev) => {
+            btn.removeEventListener('pointermove', onPointerMove);
+            btn.removeEventListener('pointerup', onPointerUp);
+            btn.releasePointerCapture(puev.pointerId);
+          };
+
+          btn.addEventListener('pointermove', onPointerMove);
+          btn.addEventListener('pointerup', onPointerUp);
+        }, 500);
+      });
+
+      const cancel = () => {
+        clearTimeout(pressTimer);
+        document.body.style.cursor = '';
+      };
+      btn.addEventListener('pointerup', cancel);
+      btn.addEventListener('pointerleave', cancel);
+    })
+    </script>
+  </body>
+</html>
