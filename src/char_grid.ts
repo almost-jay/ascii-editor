@@ -1199,7 +1199,6 @@ export class CharGrid {
                      (this.cellWidth + 0.5) | 0, (this.cellHeight + 0.5) | 0);
                 
                 this.sCtx.fillStyle = (this.activeCell === this.hoveredCell) ? this.toolManager.bgDefault : '#ffff';
-                this.cCtx.fillText(this.activeCell.char, (this.activeCell.pos.c + 0.5) * this.cellWidth, (this.activeCell.pos.r + 0.5) * this.cellHeight, this.cellWidth);
             }
         } if (this.hoveredCell && this.activeCell !== this.hoveredCell) {
             const { r: row, c: col } = this.hoveredCell.pos;
