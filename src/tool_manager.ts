@@ -91,10 +91,12 @@ export class ToolManager {
 
     modifyCellFn: (c: Partial<Cell>) => void;
     refreshFn: () => void;
+    onToolChanged: () => void;
 
-    constructor(modifyCellFn: (c: Partial<Cell>) => void, refreshFn: () => void) {
+    constructor(modifyCellFn: typeof this.modifyCellFn, refreshFn: typeof this.refreshFn, onToolChanged: typeof this.onToolChanged) {
         this.modifyCellFn = modifyCellFn;
         this.refreshFn = refreshFn;
+        this.onToolChanged = onToolChanged;
         this.initCursors();
         this.setupToolbar();
         this.setupCharsets();
@@ -123,6 +125,14 @@ export class ToolManager {
     public get currentBrushSize(): number {
         if (this.toolType === 'paint-style') return this.brushSize;
         return 0;
+    }
+
+    public get selectionIsMask(): boolean {
+        return (document.getElementById('selection-as-mask') as HTMLInputElement).checked;
+    }
+
+    public get skipBlankCells(): boolean {
+        return (document.getElementById('skip-blank-cells') as HTMLInputElement).checked;
     }
 
     // returns a hex string which is the colour which should be DISPLAYED for the foreground
@@ -181,24 +191,25 @@ export class ToolManager {
         }
     }
 
-    // If you pass in a null, it will clear the style
-    setCurrentCellStyling(styledCell: Partial<Cell>) {
+    // If you pass in a null, it should clear the style
+    // This changes the current styled cell, does not impose it over the current selected cell!
+    setCurrentCellStyling(styledCell: Partial<Cell>, impose: boolean = false) {
         if (styledCell.style) {
-            if (styledCell.style?.fgColor) {
+            if (styledCell.style?.fgColor !== undefined) {
                 this.currentStyle.fgColor = styledCell.style?.fgColor?.hexString ?? null;
                 this.paletteContainerEl.querySelectorAll('.selected.foreground').forEach((el) => { el.classList.remove('selected','foreground'); });
-                this.paletteContainerEl.querySelectorAll(`[data-colour="${styledCell.style?.fgColor?.hexString ?? 'NULL' }"]`).forEach((el) => { el.classList.add('selected', 'foreground'); });
+                this.paletteContainerEl.querySelectorAll(`[data-colour="${styledCell.style?.fgColor?.hexString || 'NULL' }"]`).forEach((el) => { el.classList.add('selected', 'foreground'); });
             }
-            if (styledCell.style?.bgColor) {
+            if (styledCell.style?.bgColor !== undefined) {
                 this.currentStyle.bgColor = styledCell.style?.bgColor?.hexString ?? null;
                 this.paletteContainerEl.querySelectorAll('.selected.background').forEach((el) => { el.classList.remove('selected','background'); });
-                this.paletteContainerEl.querySelectorAll(`[data-colour="${styledCell.style?.bgColor?.hexString ?? 'NULL' }"]`).forEach((el) => { el.classList.add('selected', 'background'); });
+                this.paletteContainerEl.querySelectorAll(`[data-colour="${styledCell.style?.bgColor?.hexString || 'NULL' }"]`).forEach((el) => { el.classList.add('selected', 'background'); });
             }
         }
-        if (styledCell.hasChar) {
+        if (styledCell.char !== undefined) {
             this.currentStyle.char = styledCell.char;
             this.charsetContainerEl.querySelectorAll('.selected').forEach((el) => { el.classList.remove('selected') });
-            this.charsetContainerEl.querySelectorAll(`[data-char="${this.currentStyle.char.trim() ?? 'NULL' }"]`).forEach((el) => { el.classList.add('selected'); });
+            this.charsetContainerEl.querySelectorAll(`[data-char="${CSS.escape(this.currentStyle.char?.trim()) || 'NULL' }"]`).forEach((el) => { el.classList.add('selected'); });
         }
 
         document.documentElement.style.setProperty('--current-fg', `${this.resolveFgColor(styledCell)}`);
@@ -207,6 +218,8 @@ export class ToolManager {
         const preview = (document.getElementById('style-preview') as HTMLPreElement);
         preview.innerText = this.currentStyle.char;
         preview.title = `char: ${this.currentStyle.char ?? '(unset)'}\nfg: ${this.resolveFgColor(styledCell)}\nbg: ${this.resolveBgColor(styledCell)}`;
+
+        if (impose) this.modifyCellFn(styledCell);
     }
     
     initCursors() {
@@ -265,11 +278,14 @@ export class ToolManager {
         (document.querySelectorAll('input[name="toolbar"]')).forEach((el: HTMLInputElement) => {
             el.addEventListener('change', () => {
                 if (el.checked) {
+                    // Update current tool
                     const newTool = el.value as Tool;
+                    // maybe could do `.tool-specific .${this.toolType}` instead?
+                    document.querySelectorAll(`.tool-specific`).forEach((e: HTMLElement) => { e.style.display = 'none' });
                     this.currentTool = newTool;
                     const toolCursor = this.getToolCursor(newTool);
                     document.documentElement.style.setProperty('--canvas-cursor', toolCursor);
-                    showText(`Cursor CSS set to: "${toolCursor}"`);
+                    document.querySelectorAll(`.tool-specific.${this.toolType}, .tool-specific.${newTool}`).forEach((e: HTMLElement) => { e.style.display = '' });
                 }
             });
         });
@@ -314,7 +330,7 @@ export class ToolManager {
         const handleSelection = (target: HTMLElement, char: string | null) => {
             container.querySelectorAll('.selected').forEach((el) => { el.classList.remove('selected') });
             target.classList.add('selected');
-            if (this.toolType === 'selection') this.modifyCellFn( { char } );
+            this.setCurrentCellStyling({ char }, (this.toolType === 'selection'));
         };
 
         const adaptivePre = document.createElement('pre');
@@ -403,7 +419,7 @@ export class ToolManager {
         const handleSelection = (target: HTMLElement, colour: string | null, type: 'foreground' | 'background') => {
             container.querySelectorAll('.selected.'+type).forEach((el) => { el.classList.remove('selected'); el.classList.remove(type) });
             target.classList.add('selected', type);
-            if (this.toolType === 'selection') this.modifyCellFn( { style: { [type === 'foreground' ? 'fgColor' : 'bgColor']: new Color(colour) } } );
+            this.setCurrentCellStyling({ style: { [type === 'foreground' ? 'fgColor' : 'bgColor']: colour ? new Color(colour) : null } }, (this.toolType === 'selection'))
         };
 
         const existingColours = [];

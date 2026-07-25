@@ -8,52 +8,54 @@
   <body>
       <div class="side-panel left open" id="left-panel">
         <button type="button" class="toggle-btn" id="panelToggle" aria-label="Toggle Panel" onclick="this.parentElement.classList.toggle('open')"></button>
+        <div class="panel-content">
 
-        <div class="char-swatch-container">
-          <div class="control-row">
-            <input type="checkbox" id="charset-lock" class="icon-btn lock-btn" checked="true" data-icon="lock" title="Toggle editing of character set" />
-            <select id="charset-select" class="palette-select">
-              <option>ASCII Set 1</option>
-              <option>ASCII Set 2</option>
-            </select>
-            <input type="button" class="icon-btn add-btn" data-icon="add" />
-          </div>
-          <div id="charset-grid" class="grid-frame">
-            <pre class="grid-item">@</pre>
-            <pre class="grid-item">#</pre>
-            <pre class="grid-item">$</pre>
-            <pre class="grid-item">%</pre>
-            <pre class="grid-item">&</pre>
-            <pre class="grid-item">*</pre>
-          </div>
-        </div>
-
-        <div class="col-swatch-container">
-          <div class="control-row">
-            <input type="checkbox" class="icon-btn lock-btn" checked="true" data-icon="lock" title="Toggle editing of colour palette" id="palette-lock" />
-            <select id="palette-select" class="palette-select">
-              <option>Palette 1</option>
-              <option>Palette 2</option>
-            </select>
-            <input type="button" class="icon-btn add-btn" data-icon="add" />
-            <input type="button" class="icon-btn" data-icon="card-add" title="Import new palette from text" />
-          </div>
-          <div id="palette-grid" class="grid-frame">
-            <pre class="grid-item swatch-item"></pre>
-            <pre class="grid-item swatch-item"></pre>
-            <pre class="grid-item swatch-item"></pre>
-            <pre class="grid-item swatch-item"></pre>
-            <pre class="grid-item swatch-item"></pre>
-            <pre class="grid-item swatch-item"></pre>
-          </div>
-        </div>
-        <div class="snippets-container">
-          <div id="snippets-grid" class="grid-frame">
-              <pre class="grid-item snippet"></pre>
-              <pre class="grid-item snippet"></pre>
-              <pre class="grid-item snippet"></pre>
-              <pre class="grid-item snippet"></pre>
+          <div class="char-swatch-container">
+            <div class="control-row">
+              <input type="checkbox" id="charset-lock" class="icon-btn lock-btn" checked="true" data-icon="lock" title="Toggle editing of character set" />
+              <select id="charset-select" class="palette-select">
+                <option>ASCII Set 1</option>
+                <option>ASCII Set 2</option>
+              </select>
+              <input type="button" class="icon-btn add-btn" data-icon="add" />
             </div>
+            <div id="charset-grid" class="grid-frame">
+              <pre class="grid-item">@</pre>
+              <pre class="grid-item">#</pre>
+              <pre class="grid-item">$</pre>
+              <pre class="grid-item">%</pre>
+              <pre class="grid-item">&</pre>
+              <pre class="grid-item">*</pre>
+            </div>
+          </div>
+
+          <div class="col-swatch-container">
+            <div class="control-row">
+              <input type="checkbox" class="icon-btn lock-btn" checked="true" data-icon="lock" title="Toggle editing of colour palette" id="palette-lock" />
+              <select id="palette-select" class="palette-select">
+                <option>Palette 1</option>
+                <option>Palette 2</option>
+              </select>
+              <input type="button" class="icon-btn add-btn" data-icon="add" />
+              <input type="button" class="icon-btn" data-icon="card-add" title="Import new palette from text" />
+            </div>
+            <div id="palette-grid" class="grid-frame">
+              <pre class="grid-item swatch-item"></pre>
+              <pre class="grid-item swatch-item"></pre>
+              <pre class="grid-item swatch-item"></pre>
+              <pre class="grid-item swatch-item"></pre>
+              <pre class="grid-item swatch-item"></pre>
+              <pre class="grid-item swatch-item"></pre>
+            </div>
+          </div>
+          <div class="snippets-container">
+            <div id="snippets-grid" class="grid-frame">
+                <pre class="grid-item snippet"></pre>
+                <pre class="grid-item snippet"></pre>
+                <pre class="grid-item snippet"></pre>
+                <pre class="grid-item snippet"></pre>
+              </div>
+          </div>
         </div>
       </div>
       <div id="main-panel">
@@ -63,8 +65,30 @@
             <input type="button" class="icon-btn" id="redo-btn" data-icon="redo" title="Redo" disabled />
           </div>  
           <div class="button-row-group">
-            <input type="checkbox" class="icon-btn" id="selection-as-mask" data-icon="checkbox" title="Only allow drawing within the active selection area" />
-            <label class="header-label" for="selection-as-mask">Selection as mask</label>
+            <div class="button-row-group stacked tool-specific eyedropper">
+              <label class="header-label" for="pick-character" title="Pick character of cell"><input type="checkbox" class="icon-btn" id="pick-character" data-icon="checkbox" />
+              Pick character</label>
+              <label class="header-label" for="pick-fg" title="Pick foreground colour of cell"><input type="checkbox" class="icon-btn" id="pick-fg" data-icon="checkbox"  />
+              Pick foreground</label>
+              <label class="header-label" for="pick-bg" title="Pick background colour of cell"><input type="checkbox" class="icon-btn" id="pick-bg" data-icon="checkbox" />
+              Pick background</label>
+            </div>
+            <div class="button-row-group stacked tool-specific paint-style">
+              <label class="header-label" for="selection-as-mask" title="Only allow drawing within the active selection area"><input type="checkbox" class="icon-btn" id="selection-as-mask" data-icon="checkbox"  />Selection as mask</label>
+              <label class="header-label" for="skip-blank-cells" title="When painting, only affect cells with a character in them"><input type="checkbox" class="icon-btn" id="skip-blank-cells" data-icon="checkbox"  />Skip blank cells</label>
+            </div>
+            <div class="button-row-group stacked tool-specific fill wand">
+              <label class="header-label" for="match-character" title="Require characters to match"><input type="checkbox" class="icon-btn" id="match-character" data-icon="checkbox" />
+              Match character</label>
+              <label class="header-label" for="match-fg" title="Require foreground colour to match"><input type="checkbox" class="icon-btn" id="match-fg" data-icon="checkbox"  />
+              Match foreground</label>
+              <label class="header-label" for="match-bg" title="Require background colour to match"><input type="checkbox" class="icon-btn" id="match-bg" data-icon="checkbox" />
+              Match background</label>
+            </div>
+            <div class="button-row-group stacked tool-specific fill wand">
+            <label class="header-label" for="spread-diagonally" title="Use 4-way or 8-way fill connectivity"><input type="checkbox" class="icon-btn" id="spread-diagonally" data-icon="checkbox" />Spread diagonally</label>
+            <label class="header-label" for="require-contiguous" title="Flood fill contiguously connected cells only"><input type="checkbox" class="icon-btn" id="require-contiguous" data-icon="checkbox" checked />Fill contiguous</label>
+            </div>
           </div>
           <div class="button-row-group">
             <input type="button" class="icon-btn import-btn" data-icon="import" title="Import text from file" />
@@ -90,8 +114,7 @@
             <input type="radio" class="icon-btn tool" name="toolbar" value="line" data-icon="line-btn" title="Draw straight lines. Hold Shift to snap to 90 degree angles" />
             <input type="radio" class="icon-btn tool" name="toolbar" value="fill" data-icon="fill" title="Fill contiguous areas of fg/bg colour" />
           </div>
-          <div class="toolbar-group" style="height: auto; flex: 0.75;"></div>
-          <div class="toolbar-group">
+          <div class="toolbar-group" style="margin-top: auto">
             <input type="button" id="setup-btn" class="icon-btn" data-icon="setup" title="Drawing setup & properties" />
             <input type="button" id="find-btn" class="icon-btn find-btn" data-icon="find" title="Find and replace cells" />
             <input type="button" id="export-btn" class="icon-btn" data-icon="export" title="Export current selection as plain text" />
@@ -102,7 +125,7 @@
         </div>
         <div id="status-bar">
           <pre id="style-preview">A</pre>
-          <span id="current-insert-mode">INSERT</span>
+          <span id="current-insert-mode" title="Current mode (toggled with INS key)">INSERT</span>
           <span>
             <input type="button" id="zoom-out-btn" class="icon-btn" data-icon="zoom-out" />
             <input type="range" id="zoom-slider" value="100" min="5" max="500" step="5" class="zoom-slider" />
@@ -114,32 +137,15 @@
       
       <div class="side-panel right open" id="right-panel">
         <button type="button" class="toggle-btn" id="panelToggle" aria-label="Toggle Panel" onclick="this.parentElement.classList.toggle('open')"></button>
-        <div id="console"></div>
-        <div class="button-row-group">
-          <input type="checkbox" id="debug-mode-btn" class="icon-btn" data-icon="debug-mode" title="Toggle debug mode" />
-          <input type="button" id="clear-storage" class="icon-btn" data-icon="delete" title="Clear localstorage" />
-        </div>
-        <pre id="preview"></pre>
-      </div>
-
-      <dialog id="cell-select-form" class="blocking">
-        <form method="dialog">
-          <input type="button" class="icon-btn close-btn" onclick="this.parentElement.parentElement.close()" data-icon="close2"></button>
-          <input type="checkbox" class="icon-btn" data-icon="checkbox" id="cell-select-char" /><label id="cell-select-char-label" for="cell-select-char"></label><br>
-          <input type="checkbox" class="icon-btn" data-icon="checkbox" id="cell-select-fg" /><label id="cell-select-fg-label" for="cell-select-fg"></label><br>
-          <input type="checkbox" class="icon-btn" data-icon="checkbox" id="cell-select-bg" /><label id="cell-select-bg-label" for="cell-select-bg"></label><br>
-          <br>
-          <label class="contiguous-line"><input type="radio" name="contiguous" value="anywhere" checked /> Anywhere</label>
-          <label class="contiguous-line"><input type="radio" name="contiguous" value="contiguous-active" /> Contiguous to active cell</label>
-          <label class="contiguous-line"><input type="radio" name="contiguous" value="contiguous-selection" /> Contiguous to active cell and current selection</label>
-        
-          <div class="dialog-actions">
-            <button type="button" onclick="this.parentElement.parentElement.parentElement.close()">Cancel</button>
-            <button type="submit" id="cell-select-submit">Go</button>
+        <div class="panel-content">
+          <div id="console"></div>
+          <div class="button-row-group">
+            <input type="checkbox" id="debug-mode-btn" class="icon-btn" data-icon="debug-mode" title="Toggle debug mode" />
+            <input type="button" id="clear-storage" class="icon-btn" data-icon="delete" title="Clear localstorage" />
           </div>
-        </form>
-      </dialog>
-      
+          <pre id="preview"></pre>
+        </div>
+        </div>
       <dialog id="page-setup" class="blocking">
         <form method="dialog">
           <input type="button" class="icon-btn close-btn" onclick="this.parentElement.parentElement.close()" data-icon="close2"></button>
@@ -186,7 +192,6 @@
 
       const formData = Object.fromEntries(new FormData(form));
       
-      // some bullshit idfk
     });
 
     document.querySelectorAll('.close-btn').forEach((inp) => {

@@ -75,10 +75,15 @@ export class Cell {
         // showText('New cell with char '+this._char);
     }
 
-    public set char(v: string|null) {
-        if (v !== null && v.length != 1) console.error(`A cell can only contain a single character (read: ${v} with length ${v.length})`);
-        if (v != null && (v === ' ' || v.trim().length === 0)) v = null;
+    public set char(v: string | null) {
+      if (v === null) {
         this._char = v;
+        return;
+      } else {
+        if (v.length != 1) console.error(`A cell can only contain a single character (read: ${v} with length ${v.length})`);
+        if ((v === ' ' || v.trim().length === 0)) v = null;
+        this._char = v;
+      }
     }
 
     public get char() {
@@ -89,17 +94,27 @@ export class Cell {
         return this.char;
     }
 
+    replaceWith(cell: Cell) {
+      this.char = cell.char;
+      this.style = { ...cell.style };
+    }
+
     reset(_v?: CellStyle): void {
         // TODO: if an object is passed, only reset the entries in that object (using it as a mask)
-        this._style = {
-            // bold: false,
-            // faint: false,
-            // italic: false,
-            // underline: false,
-            // strikethrough: false,
-            // fgColor: null,
-            // bgColor: null,
-        };
+
+        if (_v) {
+          for (const key in _v) delete this._style[key];
+        } else {
+          this._style = {
+              // bold: false,
+              // faint: false,
+              // italic: false,
+              // underline: false,
+              // strikethrough: false,
+              // fgColor: null,
+              // bgColor: null,
+          };
+        }
     }
 
     public set style(v: CellStyle) {

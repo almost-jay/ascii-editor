@@ -46,7 +46,7 @@ const schema = {
     control: { type: 'number', label: 'Time in seconds to discard between edits when pruning undo stack', min: 0 }
   },
   charMapKey: {
-    default: '\`',
+    default: '',
     control: { type: 'char', label: 'Key to hold down to trigger character map menu' }
   },
   longPressTime: {
@@ -73,6 +73,10 @@ const schema = {
     default: 'magenta' as  'magenta' | 'cyan' | 'black' | 'yellow' | 'grey',
     control: { type: 'select', label: 'Colour in which to render the secondary cursor', options: ['magenta', 'cyan', 'black', 'yellow', 'grey'] }
   },
+  skipMaskWhenNoSelection: {
+    default: true,
+    control: { type: 'boolean', label: 'When enabled, when "Selection as mask" is checked, if no selection is active, painting is allowed anywhere.' }
+  }
 } satisfies Record<string, { default: unknown; control?: unknown }>;
 
 export type Settings = { [K in keyof typeof schema]: (typeof schema)[K]['default'] };

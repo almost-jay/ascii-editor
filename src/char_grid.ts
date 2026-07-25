@@ -2,7 +2,7 @@ import Notifier from "ui-cues-ts";
 import { showText } from "./main";
 import { settings } from "./settings";
 import { ToolManager } from "./tool_manager";
-import { Cell, clampf, clampi, Color, copyToClipboard, debounce, getClipboardText, getFontAspectRatio, type CellStyle, type Position } from "./utils";
+import { Cell, clampf, clampi, Color, copyToClipboard, debounce, getClipboardText, getDirectionToOrigin, getFontAspectRatio, type CellStyle, type Direction, type Position } from "./utils";
 type SelectionOperation = "replace" | "add" | "intersect" | "subtract";
 
 const SelectAdd = (_target): boolean => { return true };
@@ -39,6 +39,7 @@ export class CharGrid {
     lastPanPos: { x: number, y: number } = { x: 0, y: 0 };
     
     lastMouseEv: MouseEvent | null;
+    mouseStartEv: MouseEvent | null;
 
     animCallbacks: Set<()=>boolean> = new Set();
     frame: number = 0;
@@ -50,6 +51,9 @@ export class CharGrid {
     selectedCells: Set<Cell> = new Set();
     selectedCellBuffer: Set<Cell> = new Set();
 
+    activeTransform: Position | null = null;
+    transformBase: Position = { r: 0, c: 0 }; // accumulated delta from earlier (released) drags of the same pending transform
+    
     insertionMode: 'insert' | 'overwrite' = 'insert';
     toolManager: ToolManager;
     mostCommonChars: string[] = [];
@@ -110,11 +114,12 @@ export class CharGrid {
 
         this.undoBtn = document.getElementById('undo-btn') as HTMLButtonElement;
         this.redoBtn = document.getElementById('redo-btn') as HTMLButtonElement;
-        this.toolManager = new ToolManager((sty: Partial<Cell>) => this.imposeCellStyle(sty, this.hasActiveSelection ? this.selectedCells : [this.activeCell]), () => {
-            this.setCanvasSize();
-            this.render(this.allCells);
-            this.renderCellBorders();
-        });
+        this.toolManager = new ToolManager((sty: Partial<Cell>) => 
+            this.imposeCellStyle(sty, this.hasSelection ? this.selectedCells : [this.activeCell], true), () => {
+                this.setCanvasSize();
+                this.render(this.allCells);
+                this.renderCellBorders();
+        },() => this.cancelTransform);
 
         this.setCanvasSize();
         
@@ -133,10 +138,11 @@ export class CharGrid {
         return this.flatGrid;
     }
 
-    public get hasActiveSelection(): boolean {
+    public get hasSelection(): boolean {
         return (this.selectedCells.size > 0);
     }
 
+    // returns world pos from mouse event
     getMousePos(ev: MouseEvent) {
         const rect = this.canvasContainer.getBoundingClientRect();
         const scaleX = this.canvasContainer.clientWidth / (rect.width || 1);
@@ -148,6 +154,23 @@ export class CharGrid {
         return {
             x: (screenX - this.currentPanX) / this.currentZoom, 
             y: (screenY - this.currentPanY) / this.currentZoom 
+        };
+    }
+
+    convertMousePosToCellPos(x: number, y: number): Position {
+        let cols = Math.floor(x / this.cellWidth);
+        let rows = Math.floor(y / this.cellHeight);
+
+        return { c: cols, r: rows };
+    }
+
+    getTransformCellPositions(startEv: MouseEvent, currentEv: MouseEvent): { start: Position, now: Position } {
+        const startWorld = this.getMousePos(startEv);
+        const nowWorld = this.getMousePos(currentEv);
+
+        return {
+            start: this.convertMousePosToCellPos(startWorld.x, startWorld.y),
+            now: this.convertMousePosToCellPos(nowWorld.x, nowWorld.y),
         };
     }
 
@@ -317,6 +340,7 @@ export class CharGrid {
             console.error('Failed to persist history to localStorage:', e);
             return false;
         }
+        this.updateHistoryButtons();
     }
 
     importFromANSI(text) {
@@ -440,7 +464,7 @@ export class CharGrid {
         const btn = document.getElementById('export-btn') as HTMLInputElement;
 
         btn.addEventListener('click', () => {
-            if (this.hasActiveSelection) {
+            if (this.hasSelection) {
                 const ansiStr = this.exportToANSI(this.selectedCells);
                 copyToClipboard(ansiStr).then((copyResult) => {
                     if (copyResult) Notifier.success('Copied to clipboard!');
@@ -498,19 +522,43 @@ export class CharGrid {
                         const col = Math.floor(x / this.cellWidth);
                         const row = Math.floor(y / this.cellHeight);
     
-                        if (this.checkPosInBounds(col, row)) {
+                        if (this.isPosInBounds(row, col)) {
                             this.toolManager.updateArrowCursor({ r: row, c: col }, this.selectionStartCell.pos);
                         }
-                    } else if (this.toolManager.currentTool === 'paint' && this.awaitingMouseUp) {
+                    } else if (this.toolManager.currentTool === 'paint') {
                         const { x, y } = this.getMousePos(ev);
     
                         const col = Math.floor(x / this.cellWidth);
                         const row = Math.floor(y / this.cellHeight);
     
-                        if (this.checkPosInBounds(col, row)) {
-                            this.imposeCellStyle(this.toolManager.currentStyledCell, [this.grid[row][col]]);
-                            this.renderCellBorders();
+                        if (this.isPosInBounds(row, col)) {
+                            const cell = this.grid[row][col];
+
+                            const isMaskedOut = this.toolManager.selectionIsMask && !cell.isSelected && (this.hasSelection || !settings.skipMaskWhenNoSelection);
+                            const isBlankSkipped = this.toolManager.skipBlankCells && !cell.hasChar;
+
+                            if (!isMaskedOut && !isBlankSkipped) {
+                                this.paintCell(this.toolManager.currentStyledCell, cell, false);
+                                this.renderCellBorders();
+                            } else {
+                                this.updateActiveCell(cell);
+                            }
                         }
+                    } else if (this.toolManager.currentTool === 'transform' && this.mouseStartEv) {
+                        const { start, now } = this.getTransformCellPositions(this.mouseStartEv, ev);
+                        this.activeTransform = {
+                            r: this.transformBase.r + (now.r - start.r),
+                            c: this.transformBase.c + (now.c - start.c)
+                        };
+                        
+                        this.emptySelectionBuffer();
+
+                        this.selectedCells.forEach((cell) => {
+                            const destPos = { r: this.activeTransform.r + cell.pos.r, c: this.activeTransform.c + cell.pos.c };
+                            if (this.isPosInBounds(destPos.r, destPos.c)) {
+                                this.selectedCellBuffer.add(this.grid[destPos.r][destPos.c]);
+                            }
+                        });
                     }
                 }
                     
@@ -545,9 +593,14 @@ export class CharGrid {
                 this.lastPanPos = { x: ev.clientX, y: ev.clientY };
             } else {
                 this.charInputEl.focus();
-                if (this.toolManager.currentTool === 'select') this.startSelection(ev);
+                this.mouseStartEv = ev;
+                if (this.toolManager.currentTool === 'select') this.startRectSelection(ev);
+                if (this.toolManager.currentTool === 'transform') {
+                    this.transformBase = this.activeTransform ? { ...this.activeTransform } : { r: 0, c: 0 };
+                }
                 this.updateCellHit(ev, this.toolManager.toolUsesActiveCell);
-                if (this.toolManager.currentTool === 'wand') this.openWandSel();
+                if (this.toolManager.currentTool === 'wand') this.wandSelection(ev);
+                if (this.toolManager.toolType === 'paint-style') this.commit();
                 this.render();
                 this.renderCellBorders();
                 this.renderMouseoverDebug(ev);
@@ -556,14 +609,16 @@ export class CharGrid {
         
         document.addEventListener('mouseup', (ev: MouseEvent) => {
             if (!this.awaitingMouseUp) return;
-            this.awaitingMouseUp = false;
-
             ev.preventDefault();
+
             if (ev.button === 2 && this.isPanning) {
                 this.isPanning = false;
                 this.render(this.allCells);
             } else {
                 if (this.toolManager.currentTool === 'select') this.endSelection(ev);
+                if (this.toolManager.currentTool === 'transform' && this.activeTransform) {
+                    showText(`Transform pending (Δr:${this.activeTransform.r}, Δc:${this.activeTransform.c})`);
+                }
                 this.updateCellHit(ev, this.toolManager.toolUsesActiveCell);
                 this.render();
                 this.renderCellBorders();
@@ -571,6 +626,9 @@ export class CharGrid {
 
                 if (this.hoveredCell) this.resolveClick(this.hoveredCell);
             }
+
+            this.awaitingMouseUp = false;
+            this.mouseStartEv = null;
         });
         
         document.addEventListener('contextmenu', (ev: PointerEvent) => {
@@ -589,6 +647,21 @@ export class CharGrid {
         document.addEventListener('keydown', (ev: KeyboardEvent) => {
             // showText(`[KEYPRESS] Current focus el: ${getReadableName(document.activeElement)}`)
             if (document.activeElement.tagName === "INPUT" && document.activeElement != this.charInputEl) return;
+
+            if (this.toolManager.currentTool === 'transform' && this.activeTransform) {
+                if (ev.key === 'Enter') {
+                    ev.preventDefault();
+                    this.finaliseTransform();
+                } else if (ev.key === 'Escape') {
+                    ev.preventDefault();
+                    this.cancelTransform();
+                    return;
+                }
+            }
+
+            if (this.hasSelection) {
+                if (ev.key === 'Enter') this.clearSelection();
+            }
             
             if (ev.key === settings.charMapKey) {
                 if (!ev.repeat) {
@@ -614,7 +687,7 @@ export class CharGrid {
                 if (this.selectedCellBuffer.size > 0) {
                     this.emptySelectionBuffer();
                     this.renderCellBorders();
-                } else if (this.hasActiveSelection) {
+                } else if (this.hasSelection) {
                     this.clearSelection();
                 } else {
                     this.updateActiveCell(null);
@@ -628,13 +701,16 @@ export class CharGrid {
 
                 this.renderCellBorders();
             } else if (ev.key === 'Delete' || ev.key === 'Backspace') {
-                if (this.hasActiveSelection) {
+                if (this.hasSelection) {
                     let anythingToDelete = false;
                     this.modifyCells((c) => { if (c.hasChar) { c.char = null; anythingToDelete = true } }, this.selectedCells);
                     showText(`Cleared ${this.selectedCells.size} cell chars`);
                     if (!anythingToDelete) {
-                        showText('Nothing to delete, so cleared selection as well');
-                        this.clearSelection();
+                        this.modifyCells((c) => { if (c.style.fgColor || c.style.bgColor) { c.reset(); anythingToDelete = true } }, this.selectedCells);
+                        if (!anythingToDelete) {
+                            showText('Nothing to delete, so clearing selection as well');
+                            this.clearSelection();
+                        }
                     }
                 } else {
                     showText('Deleting contents of cell');
@@ -687,8 +763,8 @@ export class CharGrid {
                         break;
                     case 'v':
                         ev.preventDefault();
-                        if (ev.shiftKey) getClipboardText().then(result => this.insertPlaintext(result));
-                        else getClipboardText().then(result => this.insertPlaintext(result));
+                        if (ev.shiftKey) getClipboardText().then(result => this.insertPlaintext(result, true));
+                        else getClipboardText().then(result => this.insertPlaintext(result, false));
 
                         showText('Pasted via keydown event');
                         break;
@@ -698,19 +774,6 @@ export class CharGrid {
             this.undoBtn.addEventListener('click', () =>  { this.undo() });
             this.redoBtn.addEventListener('click', () => { this.redo() });
         });
-
-        function debounceWheel() {
-            let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-            return (event: WheelEvent) => {
-                if (timeoutId) clearTimeout(timeoutId);
-
-                timeoutId = setTimeout(() => {
-                    return true;
-                    timeoutId = null;
-                }, 150);
-            };
-        }
 
         let debouncedWheelEnd = () => {};
 
@@ -765,7 +828,7 @@ export class CharGrid {
                     if (this.insertionMode === 'insert') this.stepCell(1, 0, false, false);
                     break;
                 case 'insertFromPaste':
-                    this.insertPlaintext(ev.data);
+                    this.insertPlaintext(ev.data, false);
                     showText('Pasted via input event');
                     break;
             }
@@ -775,6 +838,9 @@ export class CharGrid {
     }
 
     resolveClick(cell: Cell) {
+        if (this.toolManager.selectionIsMask) if (!cell.isSelected) return;
+        if (this.toolManager.skipBlankCells) if (!cell.hasChar) return;
+
         if (this.toolManager.currentTool === 'eyedropper') this.pickCellStyle(cell);
         if (this.toolManager.currentTool === 'paint') {
             this.imposeCellStyle(this.toolManager.currentStyledCell, [cell]);
@@ -814,15 +880,14 @@ export class CharGrid {
     }
 
     updateHistoryButtons() {
-        this.undoBtn.disabled = this.undoStack.length <= 0
-        this.redoBtn.disabled = this.redoStack.length <= 0
+        this.undoBtn.disabled = this.undoStack.length <= 0;
+        this.redoBtn.disabled = this.redoStack.length <= 0;
     }
 
     commit() {
         const snapshot = this.createSnapshot();
         // TODO: check if this snapshot is literally the same as the previous one
         this.undoStack.push(snapshot);
-
         
         if (this.undoStack.length >= settings.maxStackLength && this.undoStack.length > 0) {
             
@@ -914,23 +979,64 @@ export class CharGrid {
         this.currentPanY = clampf(this.currentPanY, minY, maxY);
     }
 
-    private stampCell(ctx: CanvasRenderingContext2D, cell: Cell) {
-        const x = cell.pos.c * this.cellWidth;
-        const y = cell.pos.r * this.cellHeight;
+    private stampCell(ctx: CanvasRenderingContext2D, cell: Cell, forcePos?: Position) {
+        const cellR = (forcePos ? forcePos.r : cell.pos.r);
+        const cellC = (forcePos ? forcePos.c : cell.pos.c);
 
-        // Background
+        const x = cellC * this.cellWidth;
+        const y = cellR * this.cellHeight;
+
         const bgColor = this.toolManager.resolveBgColor(cell);
         ctx.fillStyle = bgColor;
-        if (settings.checkerboard && !cell.style.bgColor && Math.floor(cell.pos.r + cell.pos.c) % 2 === 0 && cell.char !== null) {
+        if (settings.checkerboard && !cell.style.bgColor && Math.floor(cellR + cellC) % 2 === 0 && cell.char !== null) {
             ctx.fillStyle = Color.add(new Color(bgColor).rgbVal, { r: 20, g: 20, b: 20  }).hexString;
         }
         ctx.fillRect(x | 0, y | 0, this.cellWidth + 1 | 0, this.cellHeight + 1 | 0);
-        
-        // Text
+
         ctx.fillStyle = this.toolManager.resolveFgColor(cell);
         if (cell.char) {
             ctx.fillText(cell.char, x + this.cellWidth * 0.5, y + this.cellHeight * 0.5);
         }
+    }
+
+    private stampBlankAt(ctx: CanvasRenderingContext2D, pos: Position) {
+        const x = pos.c * this.cellWidth;
+        const y = pos.r * this.cellHeight;
+
+        ctx.fillStyle = this.toolManager.bgDefault;
+        ctx.fillRect(x | 0, y | 0, this.cellWidth + 1 | 0, this.cellHeight + 1 | 0);
+    }
+
+    private renderTransformPreview() {
+        if (!this.activeTransform) return;
+        this.sCtx.save();
+        this.sCtx.font = `${settings.fontSize}px ${settings.fontFamily}`;
+        this.sCtx.textAlign = 'center';
+        this.sCtx.textBaseline = 'middle';
+
+        for (const cell of this.selectedCells) {
+            this.stampBlankAt(this.sCtx, cell.pos);
+        }
+
+        for (const cell of this.selectedCells) {
+            const destPos = { r: cell.pos.r + this.activeTransform.r, c: cell.pos.c + this.activeTransform.c };
+            if (this.isPosInBounds(destPos.r, destPos.c)) {
+                this.stampCell(this.sCtx, cell, destPos);
+            }
+        }
+
+        this.sCtx.restore();
+    }
+
+    clearGridAt(pos: Position) {
+        this.bCtx.clearRect(pos.c * this.cellWidth, pos.r * this.cellHeight, this.cellWidth, this.cellHeight);
+    }
+
+    drawCell(cell: Cell) {
+        let c = cell.pos.c;
+        let r = cell.pos.r;
+        this.clearGridAt({ r, c });
+        this.stampCell(this.bCtx, cell);
     }
 
     render(dirtyCells?: Iterable<Cell>) {
@@ -938,13 +1044,11 @@ export class CharGrid {
             this.updatePreview();
             this.bCtx.save();
             this.bCtx.font = `${settings.fontSize}px ${settings.fontFamily}`;
-            console.log(this.bCtx.font);
             this.bCtx.textAlign = 'center';
             this.bCtx.textBaseline = 'middle';
-            
+
             for (const cell of dirtyCells) {
-                this.bCtx.clearRect(cell.pos.c * this.cellWidth, cell.pos.r * this.cellHeight, this.cellWidth, this.cellHeight);
-                this.stampCell(this.bCtx, cell);
+                this.drawCell(cell);
             }
             this.bCtx.restore();
         }
@@ -1019,10 +1123,13 @@ export class CharGrid {
             if (this.selectionType === 'replace') cellMasks = [this.selectedCellBuffer]
             // else if (this.selectionType === 'add') cellMasks = [this.selectedCells.union(this.selectedCellBuffer)]
             else cellMasks = [this.selectedCells, this.selectedCellBuffer]
+        } else if (this.activeTransform) {
+            cellMasks = [this.selectedCellBuffer];
         }
 
-        const showSelectionMask = settings.selectionMaskColor != 'transparent' && ((settings.selectionMaskPersist == 'always' && (this.hasActiveSelection || this.selectedCellBuffer.size > 1)) || (settings.selectionMaskPersist == 'whileActive' && this.selectedCellBuffer.size > 1));
+        const showSelectionMask = settings.selectionMaskColor != 'transparent' && ((settings.selectionMaskPersist == 'always' && (this.hasSelection || this.selectedCellBuffer.size > 1)) || (settings.selectionMaskPersist == 'whileActive' && this.selectedCellBuffer.size > 1));
         if (showSelectionMask) {
+            showText('Rendering selection mask...');
             this.sCtx.fillStyle = settings.selectionMaskColor;
             this.sCtx.globalAlpha = settings.selectionMaskOpacity;
             this.sCtx.fillRect(0, 0, this.width * this.cellWidth, this.height * this.cellHeight);
@@ -1032,6 +1139,10 @@ export class CharGrid {
             for (const c of cellMask) {
                 this.sCtx.clearRect(c.pos.c * this.cellWidth, c.pos.r * this.cellHeight, this.cellWidth, this.cellHeight);
             }
+        }
+        
+        if (this.activeTransform) {
+            this.renderTransformPreview();
         }
 
         for (const cellSet of cellMasks) {
@@ -1165,11 +1276,11 @@ export class CharGrid {
             this.charInputEl.value = this.activeCell.char;
             this.charInputEl.focus();
 
-            if (this.toolManager.toolType === 'selection') this.toolManager.setCurrentCellStyling(cell);
+            if (this.toolManager.currentTool === 'cursor') this.toolManager.setCurrentCellStyling(cell);
         }
     }
 
-    checkPosInBounds(col, row): boolean {
+    isPosInBounds(row, col): boolean {
         if (col < 0) return false;
         if (col >= this.width) return false;
         if (row < 0) return false;
@@ -1183,12 +1294,12 @@ export class CharGrid {
         const col = Math.floor(x / this.cellWidth);
         const row = Math.floor(y / this.cellHeight);
 
-        if (!this.checkPosInBounds(col, row)) {
+        if (!this.isPosInBounds(row, col)) {
             this.hoveredCell = null;
             return;
         }
         
-        if (setActive || (this.selectionStartCell && this.selectionStartCell !== this.grid[row][col])) {
+        if (setActive || (this.toolManager.toolType === 'selection' && this.selectionStartCell && this.selectionStartCell !== this.grid[row][col])) {
             this.updateActiveCell(this.grid[row][col]);
         }
 
@@ -1211,113 +1322,61 @@ export class CharGrid {
         }
     }
 
-    openWandSel() {
-        if (!this.activeCell) return;
-
-        const dialog = document.getElementById('cell-select-form') as HTMLDialogElement;
-        
-        const cellSelectCharLabel = document.getElementById('cell-select-char-label') as HTMLLabelElement;
-        const cellSelectFgLabel = document.getElementById('cell-select-fg-label') as HTMLLabelElement;
-        const cellSelectBgLabel = document.getElementById('cell-select-bg-label') as HTMLLabelElement;
-
-        dialog.querySelectorAll('[name="contiguous"]').forEach((el: HTMLElement) => {
-            el.style.display = ''; // show all the radio contiguous btns
-        });
-
-        cellSelectFgLabel.style.display = '';
-        cellSelectBgLabel.style.display = '';
-
-        const fgColor = this.activeCell.style.fgColor;
-        const bgColor = this.activeCell.style.bgColor;
-
-        cellSelectCharLabel.textContent = "(" + (this.activeCell.hasChar ? this.activeCell.char : 'no char') + ") ";
-
-        if (fgColor) cellSelectFgLabel.innerHTML = `(<pre title=${fgColor.toString()} style="color:${fgColor.toString()}">${fgColor.hexString}}</pre>) foreground colour`;
-        else cellSelectFgLabel.style.display = 'none';
-        
-        
-        if (bgColor) cellSelectBgLabel.innerHTML = `(<pre title=${bgColor.toString()} style="background-color:${bgColor.toString()}">${bgColor.hexString}}</pre>) background colour`;
-        else cellSelectBgLabel.style.display = 'none';
-        
-        document.getElementById(cellSelectFgLabel.htmlFor).style.display = cellSelectFgLabel.style.display;
-        document.getElementById(cellSelectBgLabel.htmlFor).style.display = cellSelectBgLabel.style.display;
-
-        dialog.showModal();
-    }
-
-    async openStylePickerSel(): Promise<Partial<Cell>> {
-        if (!this.activeCell && !this.hoveredCell) return; // TODO: write function for mousetargetcell automatically
-
-        const targetCell = this.activeCell ?? this.hoveredCell;
-
-        const cellSelectCharLabel = document.getElementById('cell-select-char-label') as HTMLLabelElement;
-        const cellSelectFgLabel = document.getElementById('cell-select-fg-label') as HTMLLabelElement;
-        const cellSelectBgLabel = document.getElementById('cell-select-bg-label') as HTMLLabelElement;
-
-        const dialog = document.getElementById('cell-select-form') as HTMLDialogElement;
-        dialog.querySelectorAll('label.contiguous-line').forEach((el: HTMLElement) => {
-            el.style.display = 'none'; // hide contiguous radio btns
-        });
-
-        cellSelectFgLabel.style.display = '';
-        cellSelectBgLabel.style.display = '';
-        document.getElementById('cell-select-fg').style.display = '';
-        document.getElementById('cell-select-bg').style.display = '';
-
-        const fgColorStr = this.toolManager.resolveFgColor(targetCell);
-        const bgColorStr = this.toolManager.resolveBgColor(targetCell);
-
-        cellSelectCharLabel.textContent = "(" + (this.activeCell.hasChar ? this.activeCell.char : 'no char') + ") ";
-
-        cellSelectFgLabel.innerHTML = `(<span title="${fgColorStr}" style="color:${fgColorStr}">${fgColorStr}</span>) foreground colour`;
-        cellSelectBgLabel.innerHTML = `(<span title="${bgColorStr}" style="background-color:${bgColorStr}">${bgColorStr}</span>) background colour`;
-        
-        dialog.addEventListener('submit', (ev) => {
-            const getChar = (document.getElementById('cell-select-char') as HTMLInputElement).checked;
-            const getFg = (document.getElementById('cell-select-fg') as HTMLInputElement).checked;
-            const getBg = (document.getElementById('cell-select-bg') as HTMLInputElement).checked;
-
-            this.toolManager.setCurrentCellStyling({
-                ...(getChar ? { char: targetCell.char} : {}),
-                style: {
-                    ...(getFg && targetCell.style.fgColor ? { fgColor: targetCell.style.fgColor } : {}),
-                    ...(getBg && targetCell.style.bgColor ? { bgColor: targetCell.style.bgColor } : {}),
-                }
-            });
-        });
-
-        dialog.showModal();
-    }
-
-    pickCellStyle(cell: Cell) {
-        // TODO: skip if ctrl key held down
-
-        this.openStylePickerSel();
-    }
-
-    startSelection(ev: MouseEvent) {
-        this.commit();
-
-        this.emptySelectionBuffer();
-        document.body.style.userSelect = 'none';
+    wandSelection(ev: MouseEvent) {
+        this.startSelection(ev);
 
         const { x, y } = this.getMousePos(ev);
 
         const col = Math.floor(x / this.cellWidth);
         const row = Math.floor(y / this.cellHeight);
 
-        if (!this.checkPosInBounds(col, row)) {
+        if (!this.isPosInBounds(row, col)) {
             this.hoveredCell = null;
             return;
         }
 
-        this.hoveredCell = this.grid[row][col];
-        this.updateActiveCell(this.grid[row][col]);
+        const startCell = this.grid[row][col];
 
-        this.selectionStartCell = this.grid[row][col];
+        const matchChar = (document.getElementById('match-character') as HTMLInputElement).checked;
+        const matchFg = (document.getElementById('match-fg') as HTMLInputElement).checked;
+        const matchBg = (document.getElementById('match-bg') as HTMLInputElement).checked;
+
+        if (!(matchChar || matchFg || matchBg)) return;
         
-        const isCtrl = ev.ctrlKey || ev.metaKey;
+        this.selectedCellBuffer = new Set(Array.from(this.allCells).filter((cell) => (
+            ((matchChar && (!cell.hasChar && !startCell.hasChar || cell.char === startCell.char)) || !matchChar) &&
+            ((matchFg && (!cell.style?.fgColor && !startCell.style?.fgColor || cell.style?.fgColor === startCell.style?.fgColor)) || !matchFg) &&
+            ((matchBg && (!cell.style?.bgColor && !startCell.style?.bgColor || cell.style?.bgColor === startCell.style?.bgColor)) || !matchBg)
+        )));
 
+        this.selectedCellBuffer.add(startCell);
+        if (this.selectionType === 'replace') this.pushSelectionBuffer(SelectAdd);
+        if (this.selectionType === 'add') this.pushSelectionBuffer(SelectAdd);
+        if (this.selectionType === 'intersect') this.pushSelectionBuffer(SelectFlip);
+        if (this.selectionType === 'subtract') this.pushSelectionBuffer(SelectSubtract);
+        
+        this.finaliseSelection();
+        this.renderCellBorders();
+    }
+
+    pickCellStyle(cell: Cell) {
+        const getChar = (document.getElementById('pick-character') as HTMLInputElement).checked;
+        const getFg = (document.getElementById('pick-fg') as HTMLInputElement).checked;
+        const getBg = (document.getElementById('pick-bg') as HTMLInputElement).checked;
+
+        if (!(getChar || getFg || getBg)) return;
+
+        this.toolManager.setCurrentCellStyling({
+            ...(getChar ? { char: cell.char} : {}),
+            style: {
+                ...(getFg && cell.style.fgColor !== undefined ? { fgColor: cell.style.fgColor } : {}),
+                ...(getBg && cell.style.bgColor !== undefined ? { bgColor: cell.style.bgColor } : {}),
+            }
+        });
+    }
+
+    startSelection(ev: MouseEvent) {
+        const isCtrl = ev.ctrlKey || ev.metaKey;
         const rules: [condition: boolean, mode: SelectionOperation][] = [
             [ev.shiftKey, "add"],
             [isCtrl, "intersect"],
@@ -1328,11 +1387,34 @@ export class CharGrid {
         showText(`Started selection in ${this.selectionType.toUpperCase()} mode`)
         if (this.selectionType === 'replace') {
             this.emptySelectedCells();
-        } 
+        }
+    }
+
+    startRectSelection(ev: MouseEvent) {
+        this.commit();
+
+        this.emptySelectionBuffer();
+        document.body.style.userSelect = 'none';
+
+        const { x, y } = this.getMousePos(ev);
+
+        const col = Math.floor(x / this.cellWidth);
+        const row = Math.floor(y / this.cellHeight);
+
+        if (!this.isPosInBounds(row, col)) {
+            this.hoveredCell = null;
+            return;
+        }
+
+        this.hoveredCell = this.grid[row][col];
+        this.updateActiveCell(this.grid[row][col]);
+
+        this.selectionStartCell = this.grid[row][col];
+        this.startSelection(ev);
     }
 
     redrawMarchingAnts(): boolean {
-        if (this.hasActiveSelection) {
+        if (this.hasSelection) {
             this.renderCellBorders();
             return true;
         }
@@ -1349,13 +1431,93 @@ export class CharGrid {
         requestAnimationFrame(() => { this.animateLoop(); });
     }
 
+    getBoundingBox(cells: Set<Cell>) {
+        if (cells.size === 0) return null;
+
+        let minR = Infinity, maxR = -Infinity;
+        let minC = Infinity, maxC = -Infinity;
+
+        for (const { pos: { r, c } } of cells) {
+            if (r < minR) minR = r;
+            if (r > maxR) maxR = r;
+            if (c < minC) minC = c;
+            if (c > maxC) maxC = c;
+        }
+
+        return {
+            topLeft: { r: minR, c: minC },
+            bottomRight: { r: maxR, c: maxC },
+        };
+    }
+
+    getSortedCells(cells: Iterable<Cell>, dir: Direction): Cell[] {
+        const rowMult = dir.includes('w') ? -1 : 1;
+        const colMult = dir.includes('n') ? -1 : 1;
+
+        return Array.from(cells).sort((a, b) => {
+            if (a.pos.r !== b.pos.r) {
+            return (a.pos.r - b.pos.r) * rowMult;
+            }
+            return (a.pos.c - b.pos.c) * colMult;
+        });
+    }
+
+    finaliseTransform() {
+        if (!this.activeTransform || !this.hasSelection) return;
+
+        const dR = this.activeTransform.r;
+        const dC = this.activeTransform.c;
+
+        const dir = getDirectionToOrigin({ r: dR, c: dC }, { r: 0, c: 0 });
+
+        if (dir) {
+            const sortedCells = this.getSortedCells(this.selectedCells, dir);
+            const oldSelection = new Set<Cell>(Array.from(this.selectedCells));
+
+            this.commit();
+    
+            for (const sourceCell of sortedCells) {
+                const { r, c } = sourceCell.pos;
+                const destCellPos = { r: r + dR, c: c + dC };
+    
+                if (this.isPosInBounds(destCellPos.r, destCellPos.c)) {
+                    const targetCell = this.grid[destCellPos.r][destCellPos.c];
+                    targetCell.replaceWith(sourceCell);
+                }
+    
+                sourceCell.char = null;
+                sourceCell.reset();
+            }
+            this.emptySelectedCells();
+            this.pushSelectionBuffer(SelectAdd);
+            this.finaliseSelection();
+            this.render([...oldSelection]);
+            
+            showText('Finished transform',"info");
+        }
+        this.activeTransform = null;
+        this.transformBase = { r: 0, c: 0 };
+        this.render(this.selectedCells);
+        this.renderCellBorders();
+    }
+
+    cancelTransform() {
+        if (!this.activeTransform) return;
+
+        this.activeTransform = null;
+        this.transformBase = { r: 0, c: 0 };
+        this.emptySelectionBuffer();
+        showText('Cancelled pending transform');
+        this.renderCellBorders();
+    }
+
     endSelection(ev: MouseEvent) {
         const { x, y } = this.getMousePos(ev);
 
         let col = Math.floor(x / this.cellWidth);
         let row = Math.floor(y / this.cellHeight);
 
-        if (!this.checkPosInBounds(col, row)) {
+        if (!this.isPosInBounds(row, col)) {
             this.hoveredCell = null;
            col = clampi(col, 0, this.width - 1); 
            row = clampi(row, 0, this.height - 1); 
@@ -1394,7 +1556,7 @@ export class CharGrid {
     }
 
     clearSelection() {
-        if (this.hasActiveSelection) this.commit();
+        if (this.hasSelection) this.commit();
         const prevSize = this.selectedCells.size;
 
         const modified = [ ...this.selectedCells ];
@@ -1427,20 +1589,28 @@ export class CharGrid {
                 c.isSelected = false;
             }
         });
-        this.selectedCellBuffer.clear();
+        this.emptySelectionBuffer();
+    }
+
+    paintCell(styledCell: Partial<Cell>, target: Cell, nullErases: boolean = false) {
+        if ((styledCell.char) || (nullErases && styledCell.char !== undefined)) {
+            target.char = styledCell.char;
+        }
+        if (styledCell.style) {
+            if (styledCell.style.fgColor) target.style.fgColor = styledCell.style.fgColor;
+            if (styledCell.style.bgColor) target.style.bgColor = styledCell.style.bgColor;
+        }
+        this.updateActiveCell(target);
+        this.render([target]);
     }
     
-    imposeCellStyle(styledCell: Partial<Cell>, cells: Iterable<Cell>) {
-        if (this.hasActiveSelection || this.activeCell) {
+    imposeCellStyle(styledCell: Partial<Cell>, cells: Iterable<Cell>, nullErases: boolean = false) {
+        // showText(`Imposing cell style: ${JSON.stringify(styledCell)}`);
+        if (this.hasSelection || this.activeCell) {
             this.modifyCells((c: Cell) => {
-                if (styledCell.char) c.char = styledCell.char;
-                if (styledCell.style) {
-                    if (styledCell.style.fgColor) c.style.fgColor = styledCell.style.fgColor;
-                    if (styledCell.style.bgColor) c.style.bgColor = styledCell.style.bgColor;
-                }
+                this.paintCell(styledCell, c, nullErases);
             }, cells);
         }
-        this.toolManager.setCurrentCellStyling(styledCell);
     }
 
     modifyActiveCell(action: (c: Cell) => any) {
@@ -1464,10 +1634,12 @@ export class CharGrid {
         this.commit();
 
         for (const cell of mask) action(cell);
+        
         this.render(mask);
     }
 
-    insertPlaintext(text: string) {
+    // if `unformatted` is true, this will adopt the styling of whatever it is pasted into
+    insertPlaintext(text: string, unformatted: boolean) {
         const startPos = this.activeCell?.pos || this.hoveredCell?.pos || null;
         if (!startPos) {
             showText('No active or hovered cell found; could not paste!');
@@ -1484,7 +1656,7 @@ export class CharGrid {
 
                 if (r >= 0 && c >= 0 && r < this.height && c < this.width) {
                     this.grid[r][c].char = v;
-                    this.grid[r][c].pos = { r, c };
+                    if (!unformatted) this.grid[r][c].reset();
                     modified.push(this.grid[r][c]);
                 }
             });
@@ -1512,7 +1684,7 @@ export class CharGrid {
             this.sCtx.textAlign = 'left';
             this.sCtx.fillText(`x:${(worldX).toFixed(0)},y:${(worldY).toFixed(0)}`, 5, 12);
 
-            if (!this.checkPosInBounds(col, row)) this.sCtx.fillStyle = 'crimson';
+            if (!this.isPosInBounds(row, col)) this.sCtx.fillStyle = 'crimson';
             this.sCtx.fillText(`c:${col},r:${row}`, 5, 26);
 
             if (this.hoveredCell) {

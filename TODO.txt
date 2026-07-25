@@ -43,7 +43,9 @@ In drawing mode, the "Auto" will erase characters
 
 - If tool category is paint-style: The active cell and the toolbar styling may not be the same, and clicking will cause the style to be imposed over the cell
 
+- Update drawer width drag thing
 
-
-
-
+- Allow shifting chars by just like... typing or something?
+- what to do if go out of bounds?
+- Add something to quickly swap selection with destination using transform tool
+- While in transform mode, pressing arrow keys should move the current selection
